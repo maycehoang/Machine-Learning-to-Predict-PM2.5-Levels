@@ -1,0 +1,359 @@
+---
+title: "Project 2"
+output:
+  pdf_document: default
+  html_document: default
+date: "2023-11-28"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Predicting PM2.5 Concentration Across the Continental US
+
+### Mindy Li, Mayce Hoang, Carlos Vazquez
+
+**Introduction**
+
+Fine particulate matter, known as PM2.5, represents a critical environmental concern due to its potential adverse effects on human health and the environment. Understanding the spatial and temporal variations in PM2.5 concentrations is crucial for effective air quality management and informed decision-making. In this report, we aim to model and evaluate annual average concentrations of PM2.5 across the continental U.S. using the U.S. Environmental Protection Agency's monitoring network data. The primary goal is to compare (four) modeling approaches: Linear Regression, k-Nearest Neighbors, Regression Tree and Random Forest and analyze which is the 'best' approach in predicting PM2.5 concentrations.
+
+The Linear Regression model provides a straightforward and interpretable framework, allowing us to understand the linear relationships between predictor variables and PM2.5 concentrations. The kNN model allows us to capture local variations and patterns in the dataset. The Regression Tree model provides a hierarchical structure to understand the influence of various predictor variables on PM2.5 concentrations. The Random Forest model extends the concept of decision trees by aggregating multiple trees.
+
+Each methodology brings its unique strengths to the forefront, allowing us to discern the most suitable framework for capturing the complexities inherent in PM2.5 concentration patterns.\
+\
+**Predictor Variables**
+
+In our modeling process, the selection of predictor variables was a strategic decision aimed at capturing key dimensions of air quality while maintaining model simplicity and interpretability. AOD, log distance to primary sector (log_dist_to_prisec), CMAQ, and poverty (pov) constitute the core predictors utilized across our models.\
+-**CMAQ:** Chosen for its comprehensive, physics-based approach, providing a holistic perspective on air pollution dynamics without direct reliance on PM2.5 gravimetric data.\
+-**AOD:** Derived from satellite observations, offering a unitless measure for seamless integration with other variables, providing an external perspective on particulate pollution.\
+-**Log_dist_to_prisec:** Represents proximity to major roads, acknowledging the non-linear relationship between distance and pollution impact through natural log transformation.\
+-**Pov:** Includes poverty rates to address potential disparities in air quality impact on vulnerable populations, considering socioeconomic factors.\
+This streamlined set of predictors enhances our model's adaptability to capture nuanced air quality dynamics across diverse geographical and contextual settings.\
+\
+**Wrangling and Exploratory Analysis**
+
+Here, the data is read in and subsequently split into two parts: the training set and the testing set. The training set contains 80% of the data and the other 20% is delegated to the test set.
+
+```{r}
+# read data in
+library(tidyverse)
+dat <- read_csv("https://github.com/rdpeng/stat322E_public/raw/main/data/pm25_data.csv.gz")
+```
+
+```{r}
+# creating the training and testing sets
+library(tidymodels)
+# for reproducibility
+set.seed(123)
+
+dat_split = initial_split(dat, prop = 0.8)
+train_set = training(dat_split)
+test_set = testing(dat_split)
+```
+
+In preparation for our predictive modeling of PM2.5 concentrations, we conducted a comprehensive exploratory analysis to understand the relationships within our chosen predictor variables: CMAQ, aod, log_dist_to_prisec, and pov.
+
+We first explored the relationships between our predictor variables through a correlation matrix. The correlation matrix reveals the strength and direction of linear relationships. Notably, we observe a positive correlation of 0.35 between CMAQ and aod, suggesting that higher CMAQ values align with increased aerosol optical depth.
+
+```{r}
+# Create a correlation matrix for the predictor variables
+predictors <- dat[, c("CMAQ", "aod", "log_dist_to_prisec", "pov")]
+
+cor_matrix <- cor(predictors)
+print(cor_matrix)
+```
+
+Scatter Plots\
+To visually explore the relationships, we created scatter plots for each predictor variable and the target variable, 'value'. There seems to be a positive correlation between CMAQ, aod and value. Additionally, there is a negative correlation between log_dist_to_prisec and value. For pov, it is difficult to determine if there is a relationship with value.
+
+```{r}
+# scatter plot
+# CMAQ
+train_set |>
+  ggplot(aes(x = CMAQ, y = value)) + geom_point()
+
+# aod
+train_set |>
+  ggplot(aes(x = aod, y = value)) + geom_point()
+
+# log_dist_to_prisec
+train_set |>
+  ggplot(aes(x = log_dist_to_prisec, y = value)) + geom_point()
+
+# poverty
+train_set |>
+  ggplot(aes(x = pov, y = value)) + geom_point()
+  
+```
+
+**Expectations for RMSE Performance**
+
+Before delving into model evaluation, we establish expectations for the Root Mean Squared Error (RMSE) across our selected models. Linear Regression is anticipated to yield a moderate to low RMSE. The k-Nearest Neighbors (kNN) model, leveraging its non-parametric nature, is expected to excel in capturing local variations, resulting in comparatively lower RMSE values. The hierarchical decision-making structure of the Regression Tree is predicted to provide nuanced insights, yielding competitive RMSE values. Lastly, the Random Forest is expected to enhance predictive accuracy, leading to lower RMSE values, positioning it as the top-performing model in our analysis.\
+\
+**Results**
+
+A linear regression model was then developed using the training set. The model's summary provides insights into coefficients, R-squared, and other statistics. Predictions were made on the test set using the trained model. The root mean-squared error (RMSE) was calculated as the primary evaluation metric.
+
+Insights:\
+The linear regression model before cross-validation demonstrates a reasonable fit to the data. An RMSE of 1.889 suggests that, on average, the model's predictions are relatively close to the true values, deviating by approximately 1.889 units from the true values. Then, cross-validation is performed using k-fold cross-validation. Predictions are made on each test fold, and RMSE is computed for model evaluation. Cross-validation results in a slightly higher average RMSE (2.184), suggesting that the model's performance might vary across different subsets of the data. The model appears to be a good starting point, but further refinement or exploration of other models could be considered to improve predictive performance of PM2.5 concentration values.
+
+```{r}
+library(tidyverse)
+library(kknn)
+library(tidymodels)
+set.seed(123)
+
+## Create the recipe
+rec = dat |> 
+    recipe(value ~ aod + log_dist_to_prisec  + CMAQ + pov)
+
+## Create the model
+model = linear_reg() |>
+    set_engine("lm") |>
+    set_mode("regression")
+
+## Create the workflow
+wf <- workflow() %>% 
+    add_recipe(rec) %>% 
+    add_model(model)
+
+## Create 10 folds from the dataset
+folds = vfold_cv(dat, v = 10)
+
+## Run cross validation with the model
+res <- fit_resamples(wf, resamples = folds)
+
+## Show performance metrics
+res %>% 
+    collect_metrics()
+```
+
+When developing the kNN model, we also began by setting the random seed to ensure reproducibility. A recipe was created to define the variables in the kNN model before configuration. A workflow was then created to combine the recipe and kNN model. Following, a 10-fold cross-validation was initiated. The dataset is divided into 10 subsets, and the model is trained and evaluated 10 times, each time using a different subset as the test set. Hyperparameter tuning is performed to find the optimal number of neighbors. The output shows the results for different model configurations with the best-performing model being "Preprocessor1_Model8" having the lowest mean RMSE of 2.139935. This indicates that, on average, the predictions of this model are close to the actual values. The other configurations (Models 7, 6, 5, and 4) have slightly higher mean RMSE values, indicating slightly less favorable performance. This indicates that the kNN model outperforms the linear regression model in terms of RMSE value on the provided test set.
+
+```{r}
+# kNN Model
+## Create the recipe
+
+set.seed(123)
+
+recipe = dat |> 
+    recipe(value ~ aod + log_dist_to_prisec  + CMAQ + pov)
+
+## Create the model
+knn_model <- nearest_neighbor(neighbors = tune()) %>% 
+    set_engine("kknn") %>% 
+    set_mode("regression")
+
+# workflow
+workflow = workflow() %>% 
+    add_recipe(recipe) %>% 
+    add_model(knn_model)
+
+# cv
+cv <- vfold_cv(dat, v = 10)
+
+# results
+knn_results =
+  workflow %>%
+  tune_grid(resamples = cv, grid = 10)
+
+knn_results |>
+  collect_metrics()
+
+knn_results |>
+  show_best(metric = 'rmse')
+```
+
+The third model we developed was the regression tree model. Likewise, we began by setting the random seed and creating a recipe to define the variables within our function. The tree model is defined using the 'decision_tree' function. The 'tree_depth' parameter is tuned during the model training process. We set the engine and mode before configuring the workflow to use the recursive partitioning algorithm for building the regression tree model. Then, cross-validation is performed using 10-fold cross-validation and the depth of the decision tree is tuned. The output shows the best hyperparameter configuration for different values of 'tree_depth'. The configuration with 'tree_depth' of 4 has the lowest mean RMSE (2.122941), indicating that, on average, this depth provides the best performance across the folds. The other configurations (11, 8, 5, 14) have slightly higher mean RMSE values, indicating slightly less favorable performance. This indicates that the regression tree model outperforms both the linear regression model and kNN model in terms of RMSE value on the provided test set. 
+
+```{r}
+# Regression Tree
+library(rpart)
+library(caret)
+library(tree)
+set.seed(123)
+# recipe
+tree_rec = dat |> 
+    recipe(value ~ aod + log_dist_to_prisec  + CMAQ + pov)
+
+# tree model
+tree_model = decision_tree(tree_depth = tune()) |>
+  set_engine('rpart') |>
+  set_mode('regression')
+
+# tree workflow 
+tree_workflow = 
+    workflow() %>% 
+    add_recipe(tree_rec) %>% 
+    add_model(tree_model)
+
+cv <- vfold_cv(dat, v = 10)
+
+# tree results               
+tree_results <- tree_workflow %>%
+  tune_grid(resamples = cv, grid = 10)
+
+# metrics
+tree_results |>
+  show_best(metric = 'rmse')
+
+tree_results |>
+  collect_metrics()
+
+```
+
+For the fourth model, a random forest model, we once again began by setting a randomization seed. The random forest model is defined with 'rand_forest()' and the number of trees and mtry (the number of available variables to consider at once) were tuned automatically using 'tune()'. The engine was set to 'ranger' and the mode was set to 'regression'. Once the workflow is defined, cross-validation is performed using 10-fold cross-validation and then the forest is tuned manually. The output shows the best hyperparameter configuration for different values of number of trees and mtry. The configuration with an mtry of 2 and 100 trees has the lowest mean RMSE (1.952904), indicating that, on average, this configuration provides the best performance across the folds. The other configurations have slightly higher mean RMSE values, indicating slightly less favorable performance. Out of all four models, this random forest model had the lowest RMSE values, making it our most accurate model and the one we will focus on in the following discussion.
+
+```{r}
+# random forest
+library(ranger)
+set.seed(123)
+
+# rec
+forest_recipe = dat |> 
+    recipe(value ~ aod + log_dist_to_prisec  + CMAQ + pov)
+
+# model
+forest_model = rand_forest(trees = tune(), mtry = tune()) |>  set_engine('ranger') |>
+  set_mode('regression')
+
+# workflow
+forest_work = 
+  workflow() %>% 
+    add_recipe(forest_recipe) %>% 
+    add_model(forest_model)
+
+# cv
+cv <- vfold_cv(dat, v = 10)
+
+# results
+forest_res = 
+  forest_work |> 
+  tune_grid(resamples = cv, grid = expand.grid(trees = c(50, 100, 200), mtry = c(1, 2)))
+
+# best tuned parameters metric  
+forest_res |>
+  show_best(metric = 'rmse')
+
+forest_res |>
+  collect_metrics()
+```
+
+Now that our RMSE values have been determined, we are able to compare them in the following bar graph and table. Although the values differ only slightly, our forest tree model is clearly the superior model in terms of prediction accuracy.
+
+```{r}
+# mean RMSE evaluation after cv for each model
+# creates df
+model_data = 
+  data.frame(Model = c('Linear', 'kNN', 'Tree', 'Forest'), 
+             RMSE = c(2.1848615, 2.139935, 2.122941, 1.952904), 
+              Rsq = c(0.2874238, 0.3116427, 0.3326779,  0.4157813))
+
+# Visualization of performance of models
+model_data |>
+  ggplot(aes(x = reorder(Model, RMSE), y = RMSE, fill = reorder(Model, RMSE))) +   
+  geom_bar(stat = 'summary') + 
+  scale_fill_brewer(palette = 'Set2') + 
+  labs(title = 'Bar Graph of RMSE of Models in Ascending Order', x = 'Model') + 
+  scale_y_continuous(limits = c(0, 2.5))
+
+# table summarizing metrics
+model_data |>
+  select(Model, RMSE) |>
+  arrange(RMSE)
+
+```
+
+Now that our best model has been determined, we are able to further analyze its performance and reflect on other factors that impact its accuracy.
+
+```{r}
+# random forest best model
+set.seed(123)
+library(randomForest)
+formula = value ~ aod + log_dist_to_prisec  + CMAQ + pov
+
+# forest model on train data
+forest_model = randomForest(formula, mtry = 2, ntree = 100, data = train_set)
+
+# predictions on test data  
+predictions = predict(forest_model, newdata = test_set)
+
+# rmse
+rmse = RMSE(pred = predictions, obs = test_set$value)
+
+# resid
+residuals = test_set$value - predictions
+
+# add resid to df
+test_set2 = 
+  test_set|>
+  mutate(residuals = residuals) |>
+  mutate(predictions = predictions)
+
+# largest residuals
+test_set2 |>
+  arrange(desc(abs(residuals))) |>
+  select(residuals, predictions, value, county, city, state)
+
+# largest residuals by state
+test_set2 %>%
+  group_by(state) %>%
+  summarize(avg_residuals = mean(residuals),
+            standard_dev = sd(residuals)) %>%
+  arrange(desc(abs(avg_residuals)))
+
+# smallest residuals
+test_set2 |>
+  arrange(abs(residuals)) |>
+  select(residuals, predictions, value, county, city, state)
+
+# smallest residuals by state
+test_set2 %>%
+  group_by(state) %>%
+  summarize(avg_residuals = mean(residuals),
+            standard_dev = sd(residuals)) %>%
+  arrange(abs(avg_residuals))
+```
+
+```{r}
+# Find the mean value of pop. density, ignoring missing values
+mean_dens = mean(test_set2$popdens_county, na.rm = TRUE)
+# Find the standard deviation of pop. density, ignoring missing values
+sd_dens = sd(test_set2$popdens_county, na.rm = TRUE)
+
+# Create a column that represents the z-score values of pop. density
+test_set3 <- test_set2 %>%
+  mutate(dens_zscore = (popdens_county - mean_dens) / sd_dens)
+
+# Plot the Density vs residuals
+test_set3 %>%
+  select(residuals, state, city, dens_zscore, popdens_county) %>%
+  ggplot(aes(x = popdens_county, y = residuals)) + 
+  geom_point() +
+  labs(title = "Population Density by County vs Residual Value",
+       x = "Population Density (people per square km)",
+       y = 'Residual') +
+  theme_minimal()
+```
+
+In this figure, the x-axis represents population density and the y-axis represents the residual value. As density increases, the spread vertical spread decreases, meaning the residual values move closer to zero. This indicates that our random forest model is better at predicting PM2.5 levels in areas with a higher population density.
+
+**Discussion and Reflection**
+
+1.  The locations where the model gives the smallest residuals and largest residuals are summarized in the code. The locations with the smallest average residuals are Kentucky, Virginia, Iowa. Locations with the largest average residuals were Florida, New York, and West Virginia. According to the previous graph, our model provided predictions that were closest to the observed values in locations where population density was high. The residual standard deviation was very high in areas with low population density. One possible cause of this is our predictor variable pov. Out of our four predictors, poverty seemed to be the weakest. Poverty tends to be higher in rural areas, which are less dense, which potentially lowered the accuracy of our model in these places.
+
+2.  As stated before, the most notable variable that predicts model performance is population density. Factors such as longitude, latitude, region, and proximity to coast seemed to be poor predictors of model accuracy. One variable not included in the data set that may improve the accuracy of our model is biome types. Certain types of environments may be more effective at dispersing or retaining air pollution, For example, forested areas may be able to capture some amounts of pollution particles. Another variable that might help is wind patterns. Windier areas experience more air flow, which may lessen the amount of air pollution that sticks around. Areas with more stagnant air could accumulate more particles of pollution.
+
+3.  When CMAQ and aod are excluded as predictors from the model, the RMSE increases drastically. While both are included, the RMSE value ranges from 1.95-1.99. After removing only aod, that value rises to 2.10-2.13. When only CMAQ is excluded the RMSE increases to 2.32-2.34. When both are removed, the RMSE ranges from 2.64-2.70.These two predictor variables seem to be far more important than our other two: Log_dist_to_prisec and pov. When these are excluded from the model, the RMSE hardly changes at all. In fact, it even lowers in some cases. Based on these observations, it seems that CMAQ and aod are excellent predictors of ground-level concentrations of PM2.5.
+
+4.  Finding patterns on where exactly our model did best was difficult, it doesn't seem to be impacted by geographic region, poverty, or similar variables. One pattern we did find, though, was that as population density increased, the model's accuracy increased as well. Residuals were smaller in counties with high population density. For that reason, our model likely would not perform well in Alaska due to the incredibly low population density. Hawaii, on the other hand, is a bit more densely populated, so our model is more likely to do well there.\
+
+What was challenging for our group was figuring out which models to develop and making sure we tuned parameters for the more intricate models like the kNN. It was also difficult to analyze our results in terms of finding patterns.
+
+Although our model performance was satisfactory, we were anticipating a slightly higher accuracy in its predictions. The forest tree model was certainly better than the regression tree model, but not to the degree we originally expected. This may be due to the fairly small amount of predictor variables we chose. There were nearly fifty to choose from, but we incorporated only four in order to refrain from over complicating the models. In addition to this, the variables pov and log_dist_to_prisec seemed to be far less useful than the other two we utilized: CMAQ and aod. In fact, when pov was removed, the average RMSE over our cross validation folds went down, meaning the model became more accurate. If we were to attempt to improve our model in the future, we would take a more in depth look at the predictor variables available to us when deciding what to incorporate. We could also use a more trial and error based system to find which combination of predictors yields the best results.
+
+Our group contributions were as following:\
+Mindy: Responsible for creating the models\
+Mayce: Analyzed models and results\
+Carlos: Analyzed models and results\
